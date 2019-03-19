@@ -1,0 +1,473 @@
+#include<opencv2/opencv.hpp>
+#include<opencv2/highgui/highgui.hpp>
+#include <opencv2/imgproc.hpp>
+#include<math.h>
+#include<stdio.h>
+#include<iostream>
+#include<vector>
+#define M_PI 3.14159265358979323846
+using namespace cv;
+using namespace std;
+
+
+
+
+Mat getmask(int size, float delta)
+{
+	Mat mask(size, size, CV_32FC1, Scalar(0, 0, 0));
+	for (int i = 0; i < size; i++)
+	{
+		for (int j = 0; j < size; j++)
+		{
+			mask.at<float>(i, j) = exp(-1 * ((i - (size - 1) / 2)*(i - (size - 1) / 2) + (j - (size - 1) / 2)*(j - (size - 1) / 2)) / (2 * delta*delta)) / (2 * M_PI*delta*delta);
+		}
+	}
+	return mask;
+}
+
+
+Mat extend(Mat src,int n)
+{
+	Mat dst(src.rows + 2*n, src.cols + 2*n, CV_8UC1, Scalar(0, 0, 0));
+	for (int i = n; i < dst.rows - n; i++)
+	{
+		for (int j = n; j < dst.cols - n; j++)
+		{
+			dst.at<uchar>(i, j) = src.at<uchar>(i - n, j - n);
+		}
+	}
+	return dst;
+}
+
+Mat gaussian(Mat src, int size, float delta)
+{
+	Mat mask = getmask(size, delta);
+	Mat ext = extend(src, size - 1);
+	Mat dst1(ext.rows, ext.cols, CV_8UC1, Scalar(0, 0, 0));
+	Mat dst2(src.rows, src.cols, CV_8UC1, Scalar(0, 0, 0));
+	
+	for (int i = (size - 1) / 2; i < ext.rows - (size - 1) / 2; i++)
+	{
+		for (int j = (size - 1) / 2; j < ext.cols - (size - 1) / 2; j++)
+		{
+			uchar sum = 0;
+			for (int a = 0; a < size; a++)
+			{
+				for (int b = 0; b < size; b++)
+				{
+					int ix = a - (size - 1) / 2;
+					int jy = b - (size - 1) / 2;
+					sum = sum + mask.at<float>(a, b)*ext.at<uchar>(i + ix, j + jy);
+				}
+			}
+			dst1.at<uchar>(i, j) = sum;
+		}
+	}
+	for (int i = 0; i < src.rows; i++)
+	{
+		for (int j = 0; j < src.cols; j++)
+		{
+			dst2.at<uchar>(i, j) = dst1.at<uchar>(i + size - 1, j + size - 1);
+		}
+	}
+	return dst2;
+}
+
+Mat medium(Mat src, int size)
+{
+	Mat ext = extend(src, size-1);
+	Mat dst(src.rows, src.cols, CV_8UC1, Scalar(0, 0, 0));
+	Mat dst1(ext.rows, ext.cols, CV_8UC1, Scalar(0, 0, 0));
+	Mat dst2(src.rows, src.cols, CV_8UC1, Scalar(0, 0, 0));
+	
+	for (int i = (size - 1) / 2; i < ext.rows - (size - 1) / 2; i++)
+	{
+		for (int j = (size - 1) / 2; j < ext.cols - (size - 1) / 2; j++)
+		{
+			uchar sum = 0;
+			for (int a = 0; a < size; a++)
+			{
+				for (int b = 0; b < size; b++)
+				{
+					int ix = a - (size - 1) / 2;
+					int jy = b - (size - 1) / 2;
+					sum = sum + ext.at<uchar>(i + ix, j + jy) / (size*size);
+				}
+			}
+			dst1.at<uchar>(i, j) = sum;
+		}
+	}
+	for (int i = 0; i < src.rows; i++)
+	{
+		for (int j = 0; j < src.cols; j++)
+		{
+			dst2.at<uchar>(i, j) = dst1.at<uchar>(i + size - 1, j + size - 1);
+		}
+	}
+	return dst2;
+}
+
+
+
+//8
+Mat dosoble(Mat src)
+{
+	int size = 3;
+	Mat ext = extend(src, size - 1);
+	Mat sobelx(3, 3, CV_32FC1);
+	Mat sobely(3, 3, CV_32FC1);
+	src = gaussian(src, 5, 8);
+	sobelx.at<float>(0, 0) = -1; sobelx.at<float>(0, 1) = 0; sobelx.at<float>(0, 2) = 1;
+	sobelx.at<float>(1, 0) = -2; sobelx.at<float>(1, 1) = 0; sobelx.at<float>(1, 2) = 2;
+	sobelx.at<float>(2, 0) = -1; sobelx.at<float>(2, 1) = 0; sobelx.at<float>(2, 2) = 1;
+	sobely.at<float>(0, 0) = -1; sobely.at<float>(0, 1) = -2; sobely.at<float>(0, 2) = -1;
+	sobely.at<float>(1, 0) = 0; sobely.at<float>(1, 1) = 0; sobely.at<float>(1, 2) = 0;
+	sobely.at<float>(2, 0) = 1; sobely.at<float>(2, 1) = 2; sobely.at<float>(2, 2) = 1;
+	Mat dst(src.rows, src.cols, CV_8UC1, Scalar(0, 0, 0));
+	Mat dst1(ext.rows, ext.cols, CV_8UC1, Scalar(0, 0, 0));
+	Mat dst2(src.rows, src.cols, CV_8UC1, Scalar(0, 0, 0));
+
+	for (int i = (size - 1) / 2; i < ext.rows - (size - 1) / 2; i++)
+	{
+		for (int j = (size - 1) / 2; j < ext.cols - (size - 1) / 2; j++)
+		{
+			float sumx = 0, sumy = 0;
+			for (int a = 0; a < size; a++)
+			{
+				for (int b = 0; b < size; b++)
+				{
+					int ix = a - (size - 1) / 2;
+					int jy = b - (size - 1) / 2;
+					sumx = sumx + float(sobelx.at<float>(a, b)*ext.at<uchar>(i + ix, j + jy));
+					sumy = sumy + float(sobely.at<float>(a, b)*ext.at<uchar>(i + ix, j + jy));
+				}
+			}
+			dst1.at<uchar>(i, j) = sqrt(sumx*sumx+sumy*sumy);
+		}
+	}
+	for (int i = 0; i < src.rows; i++)
+	{
+		for (int j = 0; j < src.cols; j++)
+		{
+			dst2.at<uchar>(i, j) = dst1.at<uchar>(i + size - 1, j + size - 1);
+		}
+	}
+	return dst2;
+}
+
+Mat dolaplace(Mat src)
+{
+	int size = 3;
+	Mat ext = extend(src, size - 1);
+	Mat sobelx(3, 3, CV_32FC1);
+	src = gaussian(src, 5, 5);
+	sobelx.at<float>(0, 0) = -1; sobelx.at<float>(0, 1) = -1; sobelx.at<float>(0, 2) = -1;
+	sobelx.at<float>(1, 0) = -1; sobelx.at<float>(1, 1) = 8; sobelx.at<float>(1, 2) = -1;
+	sobelx.at<float>(2, 0) = -1; sobelx.at<float>(2, 1) = -1; sobelx.at<float>(2, 2) = -1;
+	Mat dst(src.rows, src.cols, CV_8UC1, Scalar(0, 0, 0));
+	Mat dst1(ext.rows, ext.cols, CV_8UC1, Scalar(0, 0, 0));
+	Mat dst2(src.rows, src.cols, CV_8UC1, Scalar(0, 0, 0));
+
+	for (int i = (size - 1) / 2; i < ext.rows - (size - 1) / 2; i++)
+	{
+		for (int j = (size - 1) / 2; j < ext.cols - (size - 1) / 2; j++)
+		{
+			float sumx = 0;
+			for (int a = 0; a < size; a++)
+			{
+				for (int b = 0; b < size; b++)
+				{
+					int ix = a - (size - 1) / 2;
+					int jy = b - (size - 1) / 2;
+					sumx = sumx + float(sobelx.at<float>(a, b)*ext.at<uchar>(i + ix, j + jy));
+				}
+			}
+			if (sumx < 0) sumx = 0;
+			dst1.at<uchar>(i, j) = sumx;
+		}
+	}
+	for (int i = 0; i < src.rows; i++)
+	{
+		for (int j = 0; j < src.cols; j++)
+		{
+			dst2.at<uchar>(i, j) = dst1.at<uchar>(i + size - 1, j + size - 1);
+		}
+	}
+	return dst2;
+}
+
+Mat TraceEdge(int i,int j,Mat dst2,Mat suppress,int low)
+{
+	int cx[9] = { -1, -1, -1, 0, 0, 0, 1, 1, 1 };
+	int cy[9] = { -1, 0, 1, -1, 0, 1, -1, 0, 1 };
+	Mat result = suppress.clone();
+	for (int a = 0; a < 9; a++)
+	{
+		if (dst2.at<uchar>(i + cx[a], j + cy[a]) > low&&suppress.at<uchar>(i + cx[a], j + cy[a]) == 200)
+		{
+			result.at<uchar>(i, j) = 255;
+		}
+	}
+	return result;
+}
+
+
+Mat docanny(Mat src)
+{
+	int size = 3;
+	Mat ext = extend(src, size - 1);
+	Mat sobelx(3, 3, CV_32FC1);
+	Mat sobely(3, 3, CV_32FC1);
+	src = gaussian(src, 5, 8);
+	sobelx.at<float>(0, 0) = -1; sobelx.at<float>(0, 1) = 0; sobelx.at<float>(0, 2) = 1;
+	sobelx.at<float>(1, 0) = -2; sobelx.at<float>(1, 1) = 0; sobelx.at<float>(1, 2) = 2;
+	sobelx.at<float>(2, 0) = -1; sobelx.at<float>(2, 1) = 0; sobelx.at<float>(2, 2) = 1;
+	sobely.at<float>(0, 0) = -1; sobely.at<float>(0, 1) = -2; sobely.at<float>(0, 2) = -1;
+	sobely.at<float>(1, 0) = 0; sobely.at<float>(1, 1) = 0; sobely.at<float>(1, 2) = 0;
+	sobely.at<float>(2, 0) = 1; sobely.at<float>(2, 1) = 2; sobely.at<float>(2, 2) = 1;
+	Mat dst(src.rows, src.cols, CV_8UC1, Scalar(0, 0, 0));
+	Mat dst1(ext.rows, ext.cols, CV_8UC1, Scalar(0, 0, 0));
+	Mat dst2(src.rows, src.cols, CV_8UC1, Scalar(0, 0, 0));
+	Mat dst3(ext.rows, ext.cols, CV_32FC1, Scalar(0, 0, 0));
+	Mat angle(src.rows, src.cols, CV_32FC1, Scalar(0, 0, 0));
+	Mat suppress(src.rows, src.cols, CV_8UC1, Scalar(0, 0, 0));
+	Mat sumxe(ext.rows, ext.cols, CV_32FC1, Scalar(0, 0, 0));
+	Mat sumx(src.rows, src.cols, CV_32FC1, Scalar(0, 0, 0));
+	Mat sumye(ext.rows, ext.cols, CV_32FC1, Scalar(0, 0, 0));
+	Mat sumy(src.rows, src.cols, CV_32FC1, Scalar(0, 0, 0));
+	Mat edge(src.rows, src.cols, CV_8UC1, Scalar(0, 0, 0));
+
+	for (int i = (size - 1) / 2; i < ext.rows - (size - 1) / 2; i++)
+	{
+		for (int j = (size - 1) / 2; j < ext.cols - (size - 1) / 2; j++)
+		{
+			float sumx = 0, sumy = 0;
+			for (int a = 0; a < size; a++)
+			{
+				for (int b = 0; b < size; b++)
+				{
+					int ix = a - (size - 1) / 2;
+					int jy = b - (size - 1) / 2;
+					sumx = sumx + float(sobelx.at<float>(a, b)*ext.at<uchar>(i + ix, j + jy));
+					sumy = sumy + float(sobely.at<float>(a, b)*ext.at<uchar>(i + ix, j + jy));
+				}
+			}
+			dst1.at<uchar>(i, j) = sqrt(sumx*sumx + sumy*sumy);
+			dst3.at<float>(i, j) = atan(sumy / sumx);
+			sumxe.at<float>(i, j) = sumx;
+			sumye.at<float>(i, j) = sumy;
+		}
+	}
+	for (int i = 0; i < src.rows; i++)
+	{
+		for (int j = 0; j < src.cols; j++)
+		{
+			dst2.at<uchar>(i, j) = dst1.at<uchar>(i + size - 1, j + size - 1);
+			angle.at<float>(i, j) = dst3.at<float>(i + size - 1, j + size - 1);
+			sumx.at<float>(i, j) = sumxe.at<float>(i + size - 1, j + size - 1);
+			sumy.at<float>(i, j) = sumye.at<float>(i + size - 1, j + size - 1);
+		}
+	}
+	int g1 = 0, g2 = 0, g3 = 0, g4 = 0;
+	double dtmp1 = 0, dtmp2 = 0;
+	double dweight = 0;
+	for (int i = 1; i < suppress.rows-1; i++)
+	{
+		for (int j = 1; j < suppress.cols-1; j++)
+		{
+			if (dst2.at<uchar>(i, j) == 0) suppress.at<uchar>(i, j) = 0;
+			else
+			{
+				if ((angle.at<float>(i, j) >= M_PI / 2 && angle.at<float>(i, j) < M_PI * 3 / 4) || (
+					angle.at<float>(i, j) >= M_PI * 3 / 2 && angle.at<float>(i, j) < M_PI * 5 / 4))
+				{
+					g1 = dst2.at<uchar>(i-1, j - 1);
+					g2 = dst2.at<uchar>(i, j - 1);
+					g3 = dst2.at<uchar>(i, j + 1);
+					g4 = dst2.at<uchar>(i + 1, j + 1);
+					dweight = fabs(sumx.at<float>(i, j)) / fabs(sumy.at<float>(i, j));
+					dtmp1 = g1*dweight + (1 - dweight)*g2;
+					dtmp2 = g4*dweight + (1 - dweight)*g3;
+				}
+				else if ((angle.at<float>(i, j) >= M_PI * 3 / 4 && angle.at<float>(i, j) < M_PI) || (
+					angle.at<float>(i, j) >= M_PI * 7 / 4 && angle.at<float>(i, j) < M_PI * 2))
+				{
+					g1 = dst2.at<uchar>(i - 1, j - 1);
+					g2 = dst2.at<uchar>(i-1, j );
+					g3 = dst2.at<uchar>(i+1, j);
+					g4 = dst2.at<uchar>(i + 1, j + 1);
+					dweight = fabs(sumy.at<float>(i, j)) / fabs(sumx.at<float>(i, j));
+					dtmp1 = g1*dweight + (1 - dweight)*g2;
+					dtmp2 = g4*dweight + (1 - dweight)*g3;
+				}
+				else if ((angle.at<float>(i, j) >= M_PI  / 4 && angle.at<float>(i, j) < M_PI/2) || (
+					angle.at<float>(i, j) >= M_PI * 5 / 4 && angle.at<float>(i, j) < M_PI * 3/2))
+				{
+					g1 = dst2.at<uchar>(i + 1, j - 1);
+					g2 = dst2.at<uchar>(i , j-1);
+					g3 = dst2.at<uchar>(i , j+1);
+					g4 = dst2.at<uchar>(i - 1, j + 1);
+					dweight = fabs(sumx.at<float>(i, j)) / fabs(sumy.at<float>(i, j));
+					dtmp1 = g1*dweight + (1 - dweight)*g2;
+					dtmp2 = g4*dweight + (1 - dweight)*g3;
+				}
+				else if ((angle.at<float>(i, j) >= 0 && angle.at<float>(i, j) < M_PI/4) || (
+					angle.at<float>(i, j) >= M_PI  && angle.at<float>(i, j) < M_PI * 5/4))
+				{
+					g1 = dst2.at<uchar>(i + 1, j - 1);
+					g2 = dst2.at<uchar>(i + 1, j);
+					g3 = dst2.at<uchar>(i - 1, j);
+					g4 = dst2.at<uchar>(i - 1, j + 1);
+					dweight = fabs(sumy.at<float>(i, j)) / fabs(sumx.at<float>(i, j));
+					dtmp1 = g1*dweight + (1 - dweight)*g2;
+					dtmp2 = g4*dweight + (1 - dweight)*g3;
+				}
+			}
+			if ((dst2.at<uchar>(i, j) >= dtmp1) && (dst2.at<uchar>(i, j) >= dtmp2))
+			{
+				suppress.at<uchar>(i, j) = 200;
+			}
+			else suppress.at<uchar>(i, j) = 0;
+		}
+	}
+	int hist[1024] = { 0 };
+	for (int i = 0; i < suppress.rows; i++)
+	{
+		for (int j = 0; j < suppress.cols; j++)
+		{
+			if (suppress.at<uchar>(i, j) == 200)
+			{
+				hist[int(dst2.at<uchar>(i, j))]++;
+			}
+		}
+	}
+	int number = 0;
+	for (int i = 0; i < 1024; i++)
+	{
+		number += hist[i];
+	}
+	float highrate = 0.85, lowrate = 0.5;
+	int highnum = highrate*number;
+	int high, low,calc=0;
+	for (int i = 0; i < 1024; i++)
+	{
+		calc = calc + hist[i];
+		if (calc > highnum)
+		{
+			high = i;
+			break;
+		}
+	}
+	low = high*lowrate;
+	cout << high << ' ' << low;
+	for (int i = 1; i < edge.rows-1; i++)
+	{
+		for (int j = 1; j < edge.cols-1; j++)
+		{
+			if (suppress.at<uchar>(i, j) == 200 && dst2.at<uchar>(i, j) > high)
+			{
+				suppress.at<uchar>(i, j) = 255;
+				suppress = TraceEdge(i, j, dst2, suppress, low);
+			}
+		}
+	}
+	for (int i = 0; i < edge.rows; i++)
+	{
+		for (int j = 0; j < edge.cols; j++)
+		{
+			if (suppress.at<uchar>(i, j) !=255)
+			{
+				suppress.at<uchar>(i, j) = 0;
+			}
+		}
+	}
+	return suppress;
+}
+
+Mat Unsharp(Mat src, int size, float delta)
+{
+	Mat gas = gaussian(src, size, delta);
+	Mat div(src.rows, src.cols, CV_32FC1, Scalar(0, 0, 0));
+	Mat dst(src.rows, src.cols, CV_8UC1, Scalar(0, 0, 0));
+	for (int i = 0; i < dst.rows; i++)
+	{
+		for (int j = 0; j < dst.cols; j++)
+		{
+			div.at<float>(i, j) = float(src.at<uchar>(i, j) - gas.at<uchar>(i, j));
+			dst.at<uchar>(i, j) = div.at<float>(i, j) + src.at<uchar>(i, j);
+		}
+	}
+	return dst;
+}
+
+
+int main()
+{
+	Mat src1 = imread("E:\\课件\\图像\\第四次作业\\第4-次作业\\test4.tif", IMREAD_GRAYSCALE);
+	Mat src2 = imread("E:\\课件\\图像\\第四次作业\\第4-次作业\\test3.pgm", IMREAD_GRAYSCALE);
+	Mat unsharp1 = Unsharp(src1, 5, 10);
+	Mat unsharp2 = Unsharp(src2, 5, 10);
+	Mat sobel1 = dosoble(src1);
+	Mat sobel2 = dosoble(src2);
+	Mat laplace1 = dolaplace(src1);
+	Mat laplace2 = dolaplace(src2);
+	Mat canny1 = docanny(src1);
+	Mat canny2 = docanny(src2);
+	imwrite("E:\\课件\\图像\\第四次作业\\第4-次作业\\结果\\3\\unsharp1.bmp", unsharp1);
+	imwrite("E:\\课件\\图像\\第四次作业\\第4-次作业\\结果\\3\\unsharp2.bmp", unsharp2);
+	imwrite("E:\\课件\\图像\\第四次作业\\第4-次作业\\结果\\3\\sobel1.bmp", sobel1);
+	imwrite("E:\\课件\\图像\\第四次作业\\第4-次作业\\结果\\3\\sobel2.bmp", sobel2);
+	imwrite("E:\\课件\\图像\\第四次作业\\第4-次作业\\结果\\3\\laplace1.bmp", laplace1);
+	imwrite("E:\\课件\\图像\\第四次作业\\第4-次作业\\结果\\3\\laplace2.bmp", laplace2);
+	imwrite("E:\\课件\\图像\\第四次作业\\第4-次作业\\结果\\3\\canny1.bmp", canny1);
+	imwrite("E:\\课件\\图像\\第四次作业\\第4-次作业\\结果\\3\\canny2.bmp", canny2);
+	waitKey();
+	return 0;
+}
+
+
+
+
+//6
+int main()
+{
+	Mat src1 = imread("E:\\课件\\图像\\第四次作业\\第4-次作业\\test1.pgm",IMREAD_GRAYSCALE);
+	Mat src2 = imread("E:\\课件\\图像\\第四次作业\\第4-次作业\\test2.tif", IMREAD_GRAYSCALE);
+	Mat gas13 = gaussian(src1, 3, 1.5);
+	Mat gas23 = gaussian(src2, 3, 1.5);
+	Mat gas15 = gaussian(src1, 5, 1.5);
+	Mat gas25 = gaussian(src2, 5, 1.5);
+	Mat gas17 = gaussian(src1, 7, 1.5);
+	Mat gas27 = gaussian(src2, 7, 1.5);
+	Mat med13 = medium(src1, 3);
+	Mat med23 = medium(src2, 3);
+	Mat med15 = medium(src1, 5);
+	Mat med25 = medium(src2, 5);
+	Mat med17 = medium(src1, 7);
+	Mat med27 = medium(src2, 7);
+	imshow("13", gas13);
+	imshow("23", gas23);
+	imshow("15", gas15);
+	imshow("25", gas25);
+	imshow("17", gas17);
+	imshow("27", gas27);
+	imshow("m13", med13);
+	imshow("m23", med23);
+	imshow("m15", med15);
+	imshow("m25", med25);
+	imshow("m17", med17);
+	imshow("m27", med27);
+	imwrite("E:\\课件\\图像\\第四次作业\\第4-次作业\\结果\\1\\test13.bmp", gas13);
+	imwrite("E:\\课件\\图像\\第四次作业\\第4-次作业\\结果\\1\\test23.bmp", gas23);
+	imwrite("E:\\课件\\图像\\第四次作业\\第4-次作业\\结果\\1\\test15.bmp", gas15);
+	imwrite("E:\\课件\\图像\\第四次作业\\第4-次作业\\结果\\1\\test25.bmp", gas25);
+	imwrite("E:\\课件\\图像\\第四次作业\\第4-次作业\\结果\\1\\test17.bmp", gas17);
+	imwrite("E:\\课件\\图像\\第四次作业\\第4-次作业\\结果\\1\\test27.bmp", gas27);
+	imwrite("E:\\课件\\图像\\第四次作业\\第4-次作业\\结果\\1\\mtest13.bmp", med13);
+	imwrite("E:\\课件\\图像\\第四次作业\\第4-次作业\\结果\\1\\mtest23.bmp", med23);
+	imwrite("E:\\课件\\图像\\第四次作业\\第4-次作业\\结果\\1\\mtest15.bmp", med15);
+	imwrite("E:\\课件\\图像\\第四次作业\\第4-次作业\\结果\\1\\mtest25.bmp", med25);
+	imwrite("E:\\课件\\图像\\第四次作业\\第4-次作业\\结果\\1\\mtest17.bmp", med17);
+	imwrite("E:\\课件\\图像\\第四次作业\\第4-次作业\\结果\\1\\mtest27.bmp", med27);
+	waitKey();
+}
